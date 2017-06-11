@@ -3,6 +3,7 @@ from requests.auth import HTTPBasicAuth
 import json
 import xml.etree.ElementTree as et
 import os
+import zipfile
 
 
 class EumetsatDataClient:
@@ -18,9 +19,12 @@ class EumetsatDataClient:
 		self.auth = HTTPBasicAuth(user, password)
 
 
-	def build_query_url(self, polygon, start_date_str, end_date_str):
+	def build_query_url(self, polygon, start_date_str, end_date_str, instrument=None):
 		polygon_str = ','.join((' '.join(str(x) for x in p)) for p in polygon)
-		query_url = '{base_url}search?format=json&orderby=creationdate asc&start=0&rows=100&q=( footprint:"Intersects(POLYGON(({polygon_str})))" ) AND ( beginPosition:[{start_date_str} TO {end_date_str}] AND endPosition:[{start_date_str} TO {end_date_str}])'.format(base_url=self.base_url,polygon_str=polygon_str,start_date_str=start_date_str,end_date_str=end_date_str)
+		query = 'footprint:"Intersects(POLYGON(({polygon_str})))" ) AND ( beginPosition:[{start_date_str} TO {end_date_str}] AND endPosition:[{start_date_str} TO {end_date_str}]'.format(polygon_str=polygon_str,start_date_str=start_date_str,end_date_str=end_date_str)
+		if(instrument):
+			query = query + ' AND instrumentshortname:{instrument}'.format(instrument=instrument)
+		query_url = '{base_url}search?format=json&orderby=creationdate asc&start=0&rows=100&q=({query})'.format(base_url=self.base_url,query=query)
 		return query_url
 
 
@@ -65,9 +69,10 @@ class EumetsatDataClient:
 	polygon: array of points with longitude and latitude coordinates
 	beginDate:
 	endDate:
+	instrument: Possible options are: SAR, MSI, OLCI, SLSTR, SRAL
 	""" 
-	def query(self, polygon, start_date_str, end_date_str, debug=True):
-		url= self.build_query_url(polygon=polygon, start_date_str=start_date_str, end_date_str=end_date_str)
+	def query(self, polygon, start_date_str, end_date_str, instrument=None, debug=True):
+		url= self.build_query_url(polygon=polygon, start_date_str=start_date_str, end_date_str=end_date_str, instrument=instrument)
 		response = requests.get(url, auth=self.auth)
 		# For successful API call, response code will be 200 (OK)
 		files = []
@@ -77,15 +82,16 @@ class EumetsatDataClient:
 				print('Query EUMETSAT....')
 				print(data['feed']['opensearch:Query']['searchTerms'])
 				print('Result size:' + data['feed']['opensearch:totalResults'])
-				
-			for result in data['feed']['entry']:
-				id=result['id']
-				file_name=result['title']
-				for extr_param in result['str']:
-					if(extr_param['name'] == 'filename'):
-						file_name = extr_param['content']
-				summary=result['summary']
-				files.append({'name': file_name, 'summary': summary, 'id': id})
+			
+			if 'entry' in data['feed']:
+				for result in data['feed']['entry']:
+					id=result['id']
+					file_name=result['title']
+					for extr_param in result['str']:
+						if(extr_param['name'] == 'filename'):
+							file_name = extr_param['content']
+					summary=result['summary']
+					files.append({'name': file_name, 'summary': summary, 'id': id})
 		else:
 			print(response)
 		return files
@@ -100,7 +106,12 @@ class EumetsatDataClient:
 			self.save_local_file(url=url, local_filename=file['name'] + '/' + file['cdf_file'])
 		else:
 			url = '{base_url}odata/v1/Products(\'{id}\')/Nodes(\'{file_name}\')/$value'.format(base_url=self.base_url,id=file['id'],file_name=file['name'])
-			self.save_local_file(url=url, local_filename=file['name'] + '.zip')
+			local_file = self.save_local_file(url=url, local_filename=file['name'] + '.zip')
+			if local_file:
+				print("unzip file " + local_file)
+				zip_ref = zipfile.ZipFile(local_file, 'r')
+				zip_ref.extractall(file['name'])
+				zip_ref.close()
 
 
 	def save_local_file(self, url, local_filename):
