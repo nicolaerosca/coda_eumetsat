@@ -39,7 +39,8 @@ class EumetsatDataClient:
 			#print("found " + str(len(entries)))
 			for result in entries:
 				title=result.find('feed:title', ns).text
-				files.append({'title': title})
+				updated=result.find('feed:updated', ns).text
+				files.append({'title': title, 'updated': updated})
 		else:
 			print('Error: ' + str(response))
 		return files
