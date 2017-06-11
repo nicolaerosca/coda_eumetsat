@@ -1,3 +1,4 @@
+from __future__ import print_function
 import requests
 from requests.auth import HTTPBasicAuth
 import json
@@ -10,8 +11,10 @@ class EumetsatDataClient:
 
 	auth = None
 	base_url = None
+	debug = False
 
-	def	__init__(self, user, password, base_url='https://coda.eumetsat.int/'):
+	def	__init__(self, user, password, base_url='https://coda.eumetsat.int/', debug=False):
+		self.debug = debug
 		if(base_url.endswith('/')):
 			self.base_url = base_url
 		else:
@@ -20,8 +23,13 @@ class EumetsatDataClient:
 
 
 	def build_query_url(self, polygon, start_date_str, end_date_str, instrument=None):
-		polygon_str = ','.join((' '.join(str(x) for x in p)) for p in polygon)
-		query = 'footprint:"Intersects(POLYGON(({polygon_str})))" ) AND ( beginPosition:[{start_date_str} TO {end_date_str}] AND endPosition:[{start_date_str} TO {end_date_str}]'.format(polygon_str=polygon_str,start_date_str=start_date_str,end_date_str=end_date_str)
+		georapic_area = ''
+		if(len(polygon) > 1):
+			polygon_point_str = ','.join((' '.join(str(x) for x in p)) for p in polygon)
+			georapic_area = 'POLYGON(({points_str}))'.format(points_str=polygon_point_str)
+		else:
+			georapic_area = ','.join(str(x) for x in polygon[0])
+		query = 'footprint:"Intersects({georapic_area})" ) AND ( beginPosition:[{start_date_str} TO {end_date_str}] AND endPosition:[{start_date_str} TO {end_date_str}]'.format(georapic_area=georapic_area,start_date_str=start_date_str,end_date_str=end_date_str)
 		if(instrument):
 			query = query + ' AND instrumentshortname:{instrument}'.format(instrument=instrument)
 		query_url = '{base_url}search?format=json&orderby=creationdate asc&start=0&rows=100&q=({query})'.format(base_url=self.base_url,query=query)
@@ -30,7 +38,8 @@ class EumetsatDataClient:
 
 	def check_product_content(self, file):
 		url = '{base_url}/odata/v1/Products(\'{id}\')/Nodes(\'{file_name}\')/Nodes'.format(base_url=self.base_url,id=file['id'],file_name=file['name'])
-		print(url)
+		if(self.debug):
+			print(url)
 		response = requests.get(url, auth=self.auth)
 		files = []
 		if(response.ok):
@@ -55,7 +64,7 @@ class EumetsatDataClient:
 		for file in files:
 			if(product_entry != None):
 				cdf_files = self.check_product_content(file)
-				print('Found ' + str(len(cdf_files)) + ' files')
+				print('Found ' + str(len(cdf_files)) + ' files for product')
 				for cdf_file in cdf_files:
 					if product_entry in cdf_file['title']:
 						file['cdf_file'] = cdf_file['title']
@@ -71,14 +80,16 @@ class EumetsatDataClient:
 	endDate:
 	instrument: Possible options are: SAR, MSI, OLCI, SLSTR, SRAL
 	""" 
-	def query(self, polygon, start_date_str, end_date_str, instrument=None, debug=True):
+	def query(self, polygon, start_date_str, end_date_str, instrument=None):
 		url= self.build_query_url(polygon=polygon, start_date_str=start_date_str, end_date_str=end_date_str, instrument=instrument)
+		if(self.debug):
+			print(url)
 		response = requests.get(url, auth=self.auth)
 		# For successful API call, response code will be 200 (OK)
 		files = []
 		if(response.ok):
 			data = json.loads(response.content)
-			if(debug):
+			if(self.debug):
 				print('Query EUMETSAT....')
 				print(data['feed']['opensearch:Query']['searchTerms'])
 				print('Result size:' + data['feed']['opensearch:totalResults'])
@@ -115,8 +126,9 @@ class EumetsatDataClient:
 
 
 	def save_local_file(self, url, local_filename):
-		print('donwloading file: ' + local_filename)
-		print(url)
+		if(self.debug):
+			print('donwloading file: ' + local_filename)
+			print(url)
 		r = requests.get(url,auth=self.auth, stream=True)
 		if(r.ok):
 			# check file name contains folder 
@@ -131,7 +143,8 @@ class EumetsatDataClient:
 							f.write(chunk)
 				return local_filename
 			else:
-				print('Fille already downloaded.')
+				if(self.debug):
+					print('Fille already exist.')
 		else:
 			print('Error: ' + str(r))
 
