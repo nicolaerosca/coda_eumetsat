@@ -7,5 +7,5 @@ setup(name='coda_eumetsat',
       author='EUMETSAT GreenTeam',
       author_email='nicolae.roshca@gmail.com',
       license='MIT',
-      packages=['coda_eumetsat'],
+      packages=['eumetsat'],
       zip_safe=False)
